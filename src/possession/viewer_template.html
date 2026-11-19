@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Possession Viewer</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e7eaee; --muted: #8b95a3;
+    --home: #4c8dff; --away: #ff5a4e; --dead: #5b6573; --pitch: #1d3b2a; --pitch-line: #3f6b51;
+    --accent: #f5c542;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 14px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  canvas#pitch { width: 100%; height: auto; display: block; border-radius: 6px; }
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button { background: #222832; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+           padding: 6px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #3a4350; }
+  input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+  select { background: #222832; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px; font: inherit; }
+  .clock { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 92px; }
+  .now { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; }
+  .chip { display: inline-block; min-width: 56px; text-align: center; padding: 2px 8px; border-radius: 999px;
+          font-weight: 600; font-size: 13px; }
+  .H { background: var(--home); color: #fff; } .A { background: var(--away); color: #fff; }
+  .D { background: var(--dead); color: #fff; } .X { background: #333; color: var(--muted); }
+  .bars { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #222; margin-top: 4px; }
+  .bars div { height: 100%; transition: width .1s linear; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td, th { padding: 4px 0; text-align: right; } th { color: var(--muted); font-weight: 500; }
+  td:first-child, th:first-child { text-align: left; }
+  .best td { color: var(--accent); }
+  .timeline { margin-top: 16px; }
+  .track { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; margin: 6px 0; }
+  .track span { color: var(--muted); font-size: 12px; text-align: right; }
+  .track canvas { width: 100%; height: 18px; display: block; border-radius: 3px; cursor: pointer; }
+  .legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; margin-top: 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Possession Viewer</h1>
+    <span class="sub" id="subtitle"></span>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <canvas id="pitch" width="1050" height="680"></canvas>
+      <div class="controls">
+        <button id="play">▶ Play</button>
+        <span class="clock" id="clock">0:00</span>
+        <input type="range" id="scrub" min="0" value="0">
+        <select id="speed">
+          <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+          <option value="2">2×</option><option value="4">4×</option>
+        </select>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--home)"></i>home slot</span>
+        <span><i style="background:var(--away)"></i>away slot</span>
+        <span><i style="background:#fff"></i>ball (detected)</span>
+        <span><i style="background:var(--accent)"></i>detected touch</span>
+      </div>
+    </section>
+
+    <aside class="card">
+      <h2>This frame</h2>
+      <div class="now">
+        <span class="sub">truth</span><span><span class="chip" id="nowGt">–</span></span>
+        <span class="sub">model</span><span><span class="chip" id="nowHmm">–</span></span>
+        <span class="sub">baseline</span><span><span class="chip" id="nowBase">–</span></span>
+      </div>
+      <div style="margin-top:12px" class="sub">classifier P(home · away · dead)</div>
+      <div class="bars"><div id="pH" style="background:var(--home)"></div><div id="pA" style="background:var(--away)"></div><div id="pD" style="background:var(--dead)"></div></div>
+
+      <h2 style="margin-top:22px">Whole match (held out)</h2>
+      <table id="scores"></table>
+      <p class="note" id="noteText"></p>
+    </aside>
+  </div>
+
+  <section class="card timeline">
+    <h2>Replay window · click to jump</h2>
+    <div class="track"><span>truth</span><canvas id="zGt" height="18"></canvas></div>
+    <div class="track"><span>model (HMM)</span><canvas id="zHmm" height="18"></canvas></div>
+    <div class="track"><span>baseline</span><canvas id="zBase" height="18"></canvas></div>
+    <h2 style="margin-top:18px">Whole match</h2>
+    <div class="track"><span>truth</span><canvas id="tlGt" height="18"></canvas></div>
+    <div class="track"><span>model (HMM)</span><canvas id="tlHmm" height="18"></canvas></div>
+    <div class="track"><span>baseline</span><canvas id="tlBase" height="18"></canvas></div>
+    <div class="legend">
+      <span><i style="background:var(--home)"></i>home possession</span>
+      <span><i style="background:var(--away)"></i>away possession</span>
+      <span><i style="background:var(--dead)"></i>dead ball</span>
+      <span><i style="background:var(--accent)"></i>replay window / playhead</span>
+    </div>
+  </section>
+</main>
+
+<script>
+const DATA = /*__DATA__*/null;
+const css = getComputedStyle(document.documentElement);
+const C = { H: css.getPropertyValue('--home').trim(), A: css.getPropertyValue('--away').trim(),
+            D: css.getPropertyValue('--dead').trim(), X: '#222', accent: css.getPropertyValue('--accent').trim(),
+            pitch: css.getPropertyValue('--pitch').trim(), line: css.getPropertyValue('--pitch-line').trim() };
+const M = DATA.meta, clip = DATA.clip, fps = M.fps, [PL, PW] = M.pitch;
+const n = clip.ball.length;
+let frame = 0, playing = false, last = null, acc = 0;
+
+document.getElementById('subtitle').textContent =
+  `${M.name} · held-out game, degraded tracking (seed ${M.seed}) · replay from ${fmt(clip.start / fps)}`;
+document.getElementById('noteText').textContent = M.note;
+
+// -- scores table
+const rows = [['', 'spellF1', 'macroF1', 'poss']];
+const t = document.getElementById('scores');
+t.innerHTML = '<tr><th></th><th>spellF1</th><th>macroF1</th><th>poss.</th></tr>' +
+  M.scores.map(s => `<tr class="${s.best ? 'best' : ''}"><td>${s.name}</td><td>${s.spellF1.toFixed(3)}</td>` +
+                    `<td>${s.macroF1.toFixed(3)}</td><td>${s.poss}</td></tr>`).join('') +
+  `<tr><td class="sub">truth</td><td></td><td></td><td class="sub">${M.gt_poss}</td></tr>`;
+
+// -- pitch
+const cv = document.getElementById('pitch'), g = cv.getContext('2d');
+const S = cv.width / PL;
+function drawPitch() {
+  g.fillStyle = C.pitch; g.fillRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = C.line; g.lineWidth = 2;
+  g.strokeRect(1, 1, cv.width - 2, cv.height - 2);
+  g.beginPath(); g.moveTo(cv.width / 2, 0); g.lineTo(cv.width / 2, cv.height); g.stroke();
+  g.beginPath(); g.arc(cv.width / 2, cv.height / 2, 9.15 * S, 0, 2 * Math.PI); g.stroke();
+  for (const side of [0, 1]) {
+    const x0 = side ? cv.width : 0, dir = side ? -1 : 1;
+    const box = (d, w) => g.strokeRect(Math.min(x0, x0 + dir * d * S), (PW / 2 - w / 2) * S, d * S, w * S);
+    box(16.5, 40.32); box(5.5, 18.32);
+  }
+}
+function drawFrame(i) {
+  drawPitch();
+  const lab = clip.hmm[i];
+  // possession halo on the ball carrier's side
+  const players = clip.players[i];
+  for (let k = 0; k < players.length; k += 3) {
+    const x = players[k] / 10 * S, y = players[k + 1] / 10 * S, team = players[k + 2];
+    g.beginPath(); g.arc(x, y, 7, 0, 2 * Math.PI);
+    g.fillStyle = team === 0 ? C.H : C.A; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = 'rgba(0,0,0,.45)'; g.stroke();
+  }
+  const b = clip.ball[i];
+  if (b) {
+    const x = b[0] / 10 * S, y = b[1] / 10 * S;
+    if (clip.touch[i]) {
+      g.beginPath(); g.arc(x, y, 16, 0, 2 * Math.PI); g.strokeStyle = C.accent; g.lineWidth = 3; g.stroke();
+    }
+    g.beginPath(); g.arc(x, y, 4.5, 0, 2 * Math.PI); g.fillStyle = '#fff'; g.fill();
+  } else {
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '13px system-ui'; g.fillText('ball not detected', 12, 22);
+  }
+  // possession banner
+  g.fillStyle = lab === 'H' ? C.H : lab === 'A' ? C.A : C.D;
+  g.fillRect(0, cv.height - 6, cv.width, 6);
+}
+
+// -- side panel
+const chip = (el, l) => { el.textContent = { H: 'home', A: 'away', D: 'dead', X: '—' }[l]; el.className = 'chip ' + l; };
+const nowGt = document.getElementById('nowGt'), nowHmm = document.getElementById('nowHmm'), nowBase = document.getElementById('nowBase');
+const pH = document.getElementById('pH'), pA = document.getElementById('pA'), pD = document.getElementById('pD');
+function drawPanel(i) {
+  chip(nowGt, clip.gt[i]); chip(nowHmm, clip.hmm[i]); chip(nowBase, clip.base[i]);
+  const p = clip.proba[i];
+  pH.style.width = p[0] + '%'; pA.style.width = p[1] + '%'; pD.style.width = p[2] + '%';
+  document.getElementById('clock').textContent = fmt((clip.start + i) / fps);
+}
+
+// -- timelines
+const tl = { tlGt: DATA.timeline.gt, tlHmm: DATA.timeline.hmm, tlBase: DATA.timeline.base };
+const zoom = { zGt: clip.gt, zHmm: clip.hmm, zBase: clip.base };
+function paintRuns(c, str) {
+  const w = c.clientWidth; c.width = w * devicePixelRatio; c.height = 18 * devicePixelRatio;
+  const x = c.getContext('2d'), sx = c.width / str.length;
+  let run = 0;
+  for (let k = 1; k <= str.length; k++) {
+    if (k === str.length || str[k] !== str[run]) {
+      x.fillStyle = C[str[run]] || C.X; x.fillRect(run * sx, 0, Math.ceil((k - run) * sx), c.height); run = k;
+    }
+  }
+  return [x, sx];
+}
+function drawTimelines(i) {
+  for (const [id, str] of Object.entries(tl)) {
+    const [x, sx] = paintRuns(document.getElementById(id), str);
+    const step = M.timeline_step, a = clip.start / step * sx, bwin = (clip.start + n) / step * sx;
+    x.fillStyle = 'rgba(245,197,66,.25)'; x.fillRect(a, 0, Math.max(bwin - a, 3), x.canvas.height);
+    x.fillStyle = C.accent; x.fillRect((clip.start + i) / step * sx - 1, 0, 2 * devicePixelRatio, x.canvas.height);
+  }
+  for (const [id, str] of Object.entries(zoom)) {
+    const [x, sx] = paintRuns(document.getElementById(id), str);
+    x.fillStyle = '#fff'; x.fillRect(i * sx - 1, 0, 2 * devicePixelRatio, x.canvas.height);
+  }
+}
+for (const id of Object.keys(zoom)) {
+  document.getElementById(id).addEventListener('click', e => {
+    const r = e.target.getBoundingClientRect();
+    seek(Math.round((e.clientX - r.left) / r.width * n));
+  });
+}
+for (const id of Object.keys(tl)) {
+  document.getElementById(id).addEventListener('click', e => {
+    const r = e.target.getBoundingClientRect();
+    const f = Math.round((e.clientX - r.left) / r.width * tl[id].length * M.timeline_step) - clip.start;
+    if (f >= 0 && f < n) seek(f);
+    else document.getElementById('noteText').textContent =
+      'Only the highlighted window has frame-level tracking in this file. Rebuild with --start-min to replay another part.';
+  });
+}
+
+// -- playback
+const scrub = document.getElementById('scrub'); scrub.max = n - 1;
+scrub.addEventListener('input', () => seek(+scrub.value));
+function seek(i) { frame = Math.max(0, Math.min(n - 1, i)); scrub.value = frame; render(); }
+function render() { drawFrame(frame); drawPanel(frame); drawTimelines(frame); }
+const btn = document.getElementById('play');
+btn.addEventListener('click', () => { playing = !playing; btn.textContent = playing ? '❚❚ Pause' : '▶ Play'; last = null; if (playing) requestAnimationFrame(tick); });
+function tick(ts) {
+  if (!playing) return;
+  if (last !== null) {
+    acc += (ts - last) / 1000 * fps * +document.getElementById('speed').value;
+    const adv = Math.floor(acc); acc -= adv;
+    if (adv) { frame = Math.min(n - 1, frame + adv); scrub.value = frame; render(); }
+    if (frame >= n - 1) { playing = false; btn.textContent = '▶ Play'; }
+  }
+  last = ts; requestAnimationFrame(tick);
+}
+function fmt(s) { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, '0')}`; }
+window.addEventListener('resize', () => drawTimelines(frame));
+render();
+</script>
+</body>
+</html>

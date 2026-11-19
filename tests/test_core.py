@@ -89,3 +89,28 @@ def test_rematerialised_ball_ends_at_restart_spot():
     out = rematerialise_ball(ball, np.ones(len(ball), dtype=np.int8), np.random.default_rng(0))
     assert not np.isnan(out).any()
     assert np.allclose(out[-2], [0.9, 0.1], atol=1e-5)
+
+
+def test_short_ball_gaps_are_filled_long_ones_are_not():
+    from possession.features import _fill_short_gaps
+    x = np.arange(40, dtype=np.float32)
+    col = x.copy()
+    col[5:8] = np.nan  # 3-frame gap: filled
+    col[20:35] = np.nan  # 15-frame gap: kept
+    out = _fill_short_gaps(np.stack([col, col], 1), max_gap=8)[:, 0]
+    assert np.allclose(out[5:8], [5, 6, 7])
+    assert np.isnan(out[20:35]).all()
+
+
+def test_kick_next_to_a_player_is_a_touch_for_that_team():
+    from possession.features import clean_ball, detect_touches
+    fps = 25
+    # ball rests, then is kicked at frame 50 at 20 m/s along x
+    t = np.arange(100)
+    x = np.where(t < 50, 30.0, 30.0 + (t - 50) * 20.0 / fps)
+    ball = np.stack([x, np.full(100, 34.0)], 1).astype(np.float32)
+    cb = clean_ball(ball, fps)
+    d_home = np.abs(ball[:, 0] - 30.0) + 0.5  # a home player stands at the kick spot
+    d_away = np.full(100, 20.0, dtype=np.float32)
+    frames, team = detect_touches(cb["acc"], cb["turn"], d_home, d_away)
+    assert len(frames) >= 1 and abs(int(frames[0]) - 50) <= 3 and team[0] == 0

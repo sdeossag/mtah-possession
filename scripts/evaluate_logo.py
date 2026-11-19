@@ -29,7 +29,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 # joblib probes physical cores through `wmic`, which recent Windows no longer ships
-os.environ.setdefault("LOKY_MAX_CPU_COUNT", str(os.cpu_count() or 1))
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", str(max(1, (os.cpu_count() or 2) // 2)))
 
 from possession.dataset import prepare  # noqa: E402
 from possession.evaluate import score, spell_f1  # noqa: E402
@@ -40,7 +40,7 @@ from possession.models.hmm import HMMParams, decode  # noqa: E402
 GAMES = (1, 2, 3)
 TRAIN_SEED, TEST_SEED = 0, 100
 GRID = {
-    "tau": (0.03, 0.06, 0.12, 0.25, 0.5),
+    "tau": (0.06, 0.12, 0.25, 0.5, 0.75, 1.0),
     "switch": (1e-5, 3e-5, 1e-4, 3e-4, 1e-3),
     "to_dead": (1e-4, 3e-4, 1e-3, 3e-3),
     "from_dead": (1e-3, 3e-3, 1e-2, 3e-2),

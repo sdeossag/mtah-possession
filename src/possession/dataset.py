@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .degrade import NoiseConfig, degrade
-from .features import compute_features, swap_teams
+from .features import FEATURE_VERSION, compute_features, swap_teams
 from .groundtruth import build_labels
 from .io_metrica import load_sample_game
 from .match import Observation
@@ -38,7 +38,7 @@ def swap_labels(y: np.ndarray) -> np.ndarray:
 
 def prepare(game: int, seed: int, keep_obs: bool = False) -> Prepared:
     CACHE.mkdir(parents=True, exist_ok=True)
-    stem = CACHE / f"g{game}_s{seed}"
+    stem = CACHE / f"g{game}_s{seed}_v{FEATURE_VERSION}"
     files = [stem.with_suffix(".x.parquet"), stem.with_suffix(".xs.parquet"),
              stem.with_suffix(".npz")]
     if all(f.exists() for f in files) and not keep_obs:
